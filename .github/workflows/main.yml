@@ -5,9 +5,6 @@ on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: TomsTV
     steps:
       - uses: actions/checkout@v4
       
@@ -16,8 +13,7 @@ jobs:
         with:
           java-version: '17'
           distribution: 'zulu'
-          # Cache deaktiviert, um Suchfehler bei verschachtelten Ordnern zu vermeiden
-          
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
@@ -28,4 +24,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: TomsTV-Modernisiert
-          path: TomsTV/app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
