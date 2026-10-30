@@ -14,14 +14,28 @@ jobs:
           java-version: '17'
           distribution: 'zulu'
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      # Sucht die gradlew-Datei automatisch und wechselt in den richtigen Ordner
+      - name: Find Gradle Root and Grant Permissions
+        run: |
+          GRADLEW_PATH=$(find . -name "gradlew" -print -quit)
+          if [ -z "$GRADLEW_PATH" ]; then
+            echo "FEHLER: Keine gradlew-Datei im gesamten Repository gefunden!"
+            exit 1
+          fi
+          GRADLE_DIR=$(dirname "$GRADLEW_PATH")
+          echo "Gradle-Projekt gefunden in: $GRADLE_DIR"
+          chmod +x "$GRADLEW_PATH"
+          echo "PROJECT_DIR=$GRADLE_DIR" >> $GITHUB_ENV
 
+      # Startet den Build im automatisch erkannten Ordner
       - name: Run gradle build
-        run: ./gradlew assembleDebug --no-daemon
+        run: |
+          cd ${{ env.PROJECT_DIR }}
+          ./gradlew assembleDebug --no-daemon
 
+      # Sucht nach der erstellten APK und lädt sie hoch
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: TomsTV-Modernisiert
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: "**/build/outputs/apk/debug/*.apk"
