@@ -1,25 +1,25 @@
-name: Build Android APK
-
-on: [push, workflow_dispatch]
-
+name: Build APK
+on:
+  workflow_dispatch:
+  push:
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Unzip Project Files
-        run: |
-          if [ -f "TomsTV.zip" ]; then
-            unzip TomsTV.zip
-            rm TomsTV.zip
-          else
-            echo "FEHLER: TomsTV.zip nicht gefunden!"
-            exit 1
-          fi
-
-      # Dieser Schritt listet alle entpackten Dateien auf, damit wir den Fehler sehen
-      - name: Show Extracted Files
-        run: |
-          echo "=== Zeige alle entpackten Dateien ==="
-          find . -maxdepth 3
+      - run: unzip -q TomsTV.zip
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - run: gradle -p TomsTV assembleDebug --no-daemon
+      - run: cp TomsTV/app/build/outputs/apk/debug/app-debug.apk TomsTV.apk
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "v${{ github.run_number }}" TomsTV.apk --title "Tom's TV ${{ github.run_number }}" --notes "Build"
