@@ -41,4 +41,7 @@ jobs:
 
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "v${{ github.run_number }}" TomsTV.apk --title "Tom's TV ${{ github.run_number }}" --notes "Build"
+                run: |
+          VER=$(grep -oP 'versionName = "\K[^"]+' TomsTV/app/build.gradle.kts)
+          gh release delete "v$VER" --cleanup-tag -y || true
+          gh release create "v$VER" TomsTV.apk --title "Tom's TV $VER" --notes "Build"
