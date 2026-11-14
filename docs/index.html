@@ -1,1 +1,119 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tom’s TV Fernzugriff</title>
+<style>
+body{margin:0;font-family:system-ui,sans-serif;background:#0a0a0f;color:#fff;padding:24px;max-width:560px}
+h1{font-family:Georgia,serif;letter-spacing:4px;margin:0 0 4px}
+.line{width:80px;height:2px;background:#e5432d;margin:8px 0 18px}
+label{display:block;margin:14px 0 6px;font-size:14px;color:#b0b7bf}
+input{width:100%;box-sizing:border-box;padding:14px;border-radius:10px;border:1px solid #333;background:#16161d;color:#fff;font-size:16px}
+button{margin-top:18px;width:100%;padding:16px;border:0;border-radius:12px;background:#e5432d;color:#fff;font-size:17px;font-weight:bold}
+button.s{background:#2a2a33;margin-top:0;width:auto;padding:10px 14px;font-size:14px}
+.msg{padding:12px;border-radius:10px;margin:12px 0}.ok{background:#12391f}.err{background:#4a1616}
+.p{display:flex;align-items:center;gap:10px;background:#16161d;border-radius:12px;padding:12px;margin:8px 0}
+.p div{flex:1;min-width:0}.p small{display:block;color:#8a919a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+h2{font-size:18px;margin-top:28px}
+</style></head><body>
+<h1>TOM’S TV</h1><div class="line"></div>
+<p>Portale auf deiner Box verwalten – von überall.</p>
+<div id="msg"></div>
+<div id="c1">
+<label>Koppel-Code (steht auf dem TV unter „Fernzugriff“)</label>
+<input id="code" placeholder="abcde-fghjk" autocapitalize="off" autocorrect="off">
+<button onclick="connect()">Verbinden</button>
+</div>
+<div id="c2" style="display:none">
+<h2>Deine Portale</h2><div id="list"></div>
+<button class="s" onclick="refresh()">Aktualisieren</button>
+<h2>Portal hinzufügen</h2>
+<label>Name</label><input id="n">
+<label>Portal-URL</label><input id="u" value="http://" autocapitalize="off" autocorrect="off">
+<label>MAC-Adresse</label><input id="m" placeholder="00:1A:79:XX:XX:XX" autocapitalize="characters" autocorrect="off">
+<label>Login (optional)</label><input id="l" autocapitalize="off" autocorrect="off">
+<label>Passwort (optional)</label><input id="w" type="password">
+<button onclick="add()">Portal hinzufügen</button>
+<p style="margin-top:28px"><a href="#" style="color:#b0b7bf" onclick="logout();return false">Anderen Code verwenden</a></p>
+</div>
+<script>
+const RELAY='https://ntfy.sh',E=new TextEncoder(),D=new TextDecoder();
+let topic='',K=null,busy=false;
+const $=id=>document.getElementById(id);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const norm=c=>c.toLowerCase().replace(/[^a-z0-9]/g,'');
+function say(t,k){$('msg').innerHTML='';if(!t)return;const d=document.createElement('div');d.className='msg '+k;d.textContent=t;$('msg').appendChild(d);}
+function b64(buf){let s='';new Uint8Array(buf).forEach(b=>s+=String.fromCharCode(b));return btoa(s);}
+function unb64(s){const b=atob(s),a=new Uint8Array(b.length);for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a;}
+async function setup(c){
+  c=norm(c);
+  const h=await crypto.subtle.digest('SHA-256',E.encode('tomstv-topic:'+c));
+  topic=[...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,32);
+  const km=await crypto.subtle.importKey('raw',E.encode(c),'PBKDF2',false,['deriveKey']);
+  K=await crypto.subtle.deriveKey({name:'PBKDF2',salt:E.encode('tomstv-remote'),iterations:50000,hash:'SHA-1'},km,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+}
+async function seal(o){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},K,E.encode(JSON.stringify(o))));
+  const all=new Uint8Array(12+ct.length);all.set(iv);all.set(ct,12);return b64(all);
+}
+async function open(s){
+  try{const a=unb64(s);const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:a.slice(0,12)},K,a.slice(12));return JSON.parse(D.decode(pt));}catch(e){return null;}
+}
+async function call(o){
+  o.n=Math.random().toString(36).slice(2)+Date.now().toString(36);
+  const r=await fetch(RELAY+'/'+topic+'c',{method:'POST',body:await seal(o)});
+  if(!r.ok)throw new Error('Relay-Fehler '+r.status);
+  for(let i=0;i<14;i++){
+    await sleep(2000);
+    const rr=await fetch(RELAY+'/'+topic+'r/json?poll=1&since=3m');
+    const t=await rr.text();
+    for(const line of t.split('\n')){
+      if(!line.trim())continue;
+      let m;try{m=JSON.parse(line);}catch(e){continue}
+      if(m.event!=='message')continue;
+      const p=await open(m.message);
+      if(p&&p.n===o.n)return p;
+    }
+  }
+  throw new Error('Keine Antwort von der Box. Läuft Tom’s TV und ist der Fernzugriff eingeschaltet?');
+}
+function render(p){
+  const l=$('list');l.innerHTML='';
+  if(!p.portals||!p.portals.length){l.textContent='Keine Portale.';return;}
+  p.portals.forEach(x=>{
+    const d=document.createElement('div');d.className='p';
+    const i=document.createElement('div');
+    const a=document.createElement('b');a.textContent=x.name;
+    const s=document.createElement('small');s.textContent=x.url;
+    i.appendChild(a);i.appendChild(s);
+    const b=document.createElement('button');b.className='s';b.textContent='Löschen';
+    b.onclick=()=>del(x);
+    d.appendChild(i);d.appendChild(b);l.appendChild(d);
+  });
+}
+async function run(o,okMsg){
+  if(busy)return;busy=true;say('Sende an die Box … (bis zu 30 Sekunden)','ok');
+  try{const p=await call(o);render(p);say(p.msg||okMsg,p.ok?'ok':'err');return p;}
+  catch(e){say(e.message,'err');}
+  finally{busy=false;}
+}
+async function connect(){
+  const c=$('code').value;if(norm(c).length<10){say('Bitte den 10-stelligen Code eingeben.','err');return;}
+  await setup(c);
+  const p=await run({op:'list'},'Verbunden');
+  if(p){try{localStorage.setItem('tt',norm(c));}catch(e){}$('c1').style.display='none';$('c2').style.display='block';}
+}
+function refresh(){run({op:'list'},'Aktualisiert');}
+function del(x){if(confirm('„'+x.name+'“ wirklich löschen?'))run({op:'del',id:x.id},'Gelöscht');}
+async function add(){
+  const p=await run({op:'add',name:$('n').value.trim(),url:$('u').value.trim(),mac:$('m').value.trim(),login:$('l').value.trim(),password:$('w').value},'Hinzugefügt');
+  if(p&&p.ok){$('n').value='';$('m').value='';$('l').value='';$('w').value='';$('u').value='http://';}
+}
+function logout(){try{localStorage.removeItem('tt');}catch(e){}location.hash='';location.reload();}
+(function(){
+  let c=location.hash.replace('#','');
+  if(!c){try{c=localStorage.getItem('tt')||'';}catch(e){}}
+  if(c){$('code').value=c;connect();}
+})();
+</script></body></html>
 
