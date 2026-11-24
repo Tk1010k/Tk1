@@ -26,6 +26,17 @@ h2{font-size:18px;margin-top:28px}
 <div id="c2" style="display:none">
 <h2>Deine Portale</h2><div id="list"></div>
 <button class="s" onclick="refresh()">Aktualisieren</button>
+<div id="ed" style="display:none"><h2>Portal bearbeiten</h2>
+<label>Name</label><input id="en">
+<label>Portal-URL</label><input id="eu" autocapitalize="off" autocorrect="off">
+<label>MAC-Adresse</label><input id="em" autocapitalize="characters" autocorrect="off">
+<label>Login (optional)</label><input id="el" autocapitalize="off" autocorrect="off">
+<label>Neues Passwort (leer = unverändert)</label><input id="ew" type="password">
+<div id="efbs"></div>
+<button class="s" style="margin-top:14px" onclick="addFb('efbs')">＋ Fallback (URL + MAC)</button>
+<button onclick="saveEdit()">Speichern</button>
+<button class="s" style="margin-top:10px" onclick="closeEdit()">Abbrechen</button>
+<hr style="border:0;border-top:1px solid #333;margin:28px 0"></div>
 <h2>Portal hinzufügen</h2>
 <label>Name</label><input id="n">
 <label>Portal-URL</label><input id="u" value="http://" autocapitalize="off" autocorrect="off">
@@ -90,7 +101,9 @@ function render(p){
     i.appendChild(a);i.appendChild(s);
     const b=document.createElement('button');b.className='s';b.textContent='Löschen';
     b.onclick=()=>del(x);
-    d.appendChild(i);d.appendChild(b);l.appendChild(d);
+    const e=document.createElement('button');e.className='s';e.textContent='Bearbeiten';
+    e.onclick=()=>openEdit(x);
+    d.appendChild(i);d.appendChild(e);d.appendChild(b);l.appendChild(d);
   });
 }
 async function run(o,okMsg){
@@ -108,13 +121,30 @@ async function connect(){
 function refresh(){run({op:'list'},'Aktualisiert');}
 function del(x){if(confirm('„'+x.name+'“ wirklich löschen?'))run({op:'del',id:x.id},'Gelöscht');}
 async function add(){
-  const p=await run({op:'add',name:$('n').value.trim(),url:$('u').value.trim(),mac:$('m').value.trim(),login:$('l').value.trim(),password:$('w').value,fb:[...document.querySelectorAll('#fbs > div')].map(w=>({url:w.querySelector('.fu').value.trim(),mac:w.querySelector('.fm').value.trim()}))},'Hinzugefügt');
+  const p=await run({op:'add',name:$('n').value.trim(),url:$('u').value.trim(),mac:$('m').value.trim(),login:$('l').value.trim(),password:$('w').value,fb:fbVals('fbs')},'Hinzugefügt');
   if(p&&p.ok){$('n').value='';$('m').value='';$('l').value='';$('w').value='';$('u').value='http://';$('fbs').innerHTML='';}
 }
-function addFb(){
-  const d=$('fbs'),i=d.children.length,w=document.createElement('div');
+const fbVals=t=>[...document.querySelectorAll('#'+t+' > div')].map(w=>({url:w.querySelector('.fu').value.trim(),mac:w.querySelector('.fm').value.trim()}));
+let editId='';
+async function openEdit(x){
+  const p=await run({op:'get',id:x.id},'Geladen');
+  if(!p||!p.ok||!p.p)return;
+  const q=p.p;editId=q.id;
+  $('en').value=q.name;$('eu').value=q.url;$('em').value=q.mac;$('el').value=q.login;$('ew').value='';
+  $('efbs').innerHTML='';(q.fb||[]).forEach(f=>addFb('efbs',f.url,f.mac));
+  $('ed').style.display='block';$('ed').scrollIntoView({behavior:'smooth'});
+}
+function closeEdit(){editId='';$('ed').style.display='none';}
+async function saveEdit(){
+  const p=await run({op:'edit',id:editId,name:$('en').value.trim(),url:$('eu').value.trim(),mac:$('em').value.trim(),login:$('el').value.trim(),password:$('ew').value,fb:fbVals('efbs')},'Gespeichert');
+  if(p&&p.ok)closeEdit();
+}
+function addFb(t,u,m){
+  const d=$(t||'fbs'),i=d.children.length,w=document.createElement('div');
   w.innerHTML='<label>Fallback '+(i+1)+': URL (leer = wie oben)</label><input class="fu" autocapitalize="off" autocorrect="off"><label>Fallback '+(i+1)+': MAC (leer = wie oben)</label><input class="fm" autocapitalize="characters" autocorrect="off">';
   d.appendChild(w);
+  if(u)w.querySelector('.fu').value=u;
+  if(m)w.querySelector('.fm').value=m;
 }
 function logout(){try{localStorage.removeItem('tt');}catch(e){}location.hash='';location.reload();}
 (function(){
